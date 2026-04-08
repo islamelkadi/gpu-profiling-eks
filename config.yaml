@@ -1,0 +1,23 @@
+# ======================
+# Training Configuration
+# ======================
+# Override any of the following via CLI flags (e.g., --batch-size 256)
+# or pass this file with: python -m src.training.train --config config.yaml
+
+# Model
+model: resnet18
+dataset: cifar10
+
+# Training Hyperparameters
+batch_size: 128
+epochs: 5
+learning_rate: 0.1
+momentum: 0.9
+weight_decay: 0.0005
+
+# Data Loading
+num_workers: 2
+data_dir: /data
+
+# LR Scheduler
+scheduler: cosine

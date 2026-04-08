@@ -1,0 +1,2 @@
+# Shared utils
+ai-infra-common @ git+https://github.com/islamelkadi/ai-common-infra-utils.git@main

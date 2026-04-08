@@ -1,0 +1,12 @@
+# Terraform
+**.terraform/
+**.tfstate**
+**terraform-modules
+
+# Python
+**__pycache__/
+**.venv/
+**.pyc
+
+# macOS
+# DS_Store
