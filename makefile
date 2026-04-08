@@ -66,7 +66,15 @@ export IMAGE_TAG     := latest
 export EPOCHS        ?= 5
 export BATCH_SIZE    ?= 128
 export MEMORY        ?= 8Gi
+export JOB_NAME		 ?= profiling-baseline
 export EFS_ID        ?= $(shell cd $(TF_DIR) && terraform output -raw efs_id 2>/dev/null)
+
+# -----------------------------------------------------------------------------
+# GPU NodePool Limits (override via CLI: make gpu-nodepool GPU_NODEPOOL_GPUS=2)
+# -----------------------------------------------------------------------------
+export GPU_NODEPOOL_CPU	   ?= 8
+export GPU_NODEPOOL_MEMORY ?= 32Gi
+export GPU_NODEPOOL_GPUS   ?= 1
 
 # -----------------------------------------------------------------------------
 # Manifest Paths
@@ -208,7 +216,7 @@ run:
 
 ## logs: Tail logs from the profiling Job
 logs:
-	kubectl logs -f job/profiling
+	kubectl logs -f job/${JOB_NAME}
 
 ## status: Check status of training pods
 status:
@@ -241,7 +249,7 @@ ssm-tunnel-status:
 
 ## clean: Delete Kubernetes resources
 clean:
-	kubectl delete job profiling --ignore-not-found
+	kubectl delete job ${JOB_NAME} --ignore-not-found
 
 ## clean-venv: Remove the virtual environment
 clean-venv:

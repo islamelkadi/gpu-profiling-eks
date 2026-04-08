@@ -29,9 +29,9 @@ spec:
         - key: nvidia.com/gpu
           effect: NoSchedule
   limits:
-    cpu: "8"
-    memory: 32Gi
-    nvidia.com/gpu: "1"
+    cpu: "${GPU_NODEPOOL_CPU}"
+    memory: ${GPU_NODEPOOL_MEMORY}
+    nvidia.com/gpu: "${GPU_NODEPOOL_GPUS}"
   disruption:
     consolidationPolicy: WhenEmpty
     consolidateAfter: 5m
