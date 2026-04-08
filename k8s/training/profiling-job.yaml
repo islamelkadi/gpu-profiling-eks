@@ -1,6 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
+  name: ${JOB_NAME}
   labels:
     app: training
     method: baseline
@@ -13,6 +14,12 @@ spec:
         app: training
         method: baseline
     spec:
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      nodeSelector:
+        karpenter.sh/nodepool: gpu
       containers:
         - name: training
           image: ${ECR_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
