@@ -264,5 +264,5 @@ teardown:
 # Full Pipeline
 # =============================================================================
 
-## all: Full end-to-end pipeline — setup → infra → storage → build → push → run
-all: setup infra build push ssm-tunnel-start storage run
+## all: Full end-to-end pipeline
+all: setup infra build push ssm-tunnel-start storage gpu-nodepool run
