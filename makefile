@@ -166,7 +166,7 @@ setup: venv
 
 ## infra: Provision AWS infrastructure with Terraform
 infra:
-	cd $(TF_DIR) && terraform apply -var-file=params/input.tfvars
+	cd $(TF_DIR) && terraform apply -auto-approve -var-file=params/input.tfvars
 
 # =============================================================================
 # Kubernetes Storage (EFS)
