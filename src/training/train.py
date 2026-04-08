@@ -7,8 +7,11 @@ Usage:
 """
 
 import argparse
+import json
 import logging
+import os
 import time
+from datetime import datetime
 
 import torch
 import torch.nn as nn
@@ -61,6 +64,8 @@ def parse_args():
     add_training_args(parser)
     parser.add_argument("--config", type=str, default=None,
                         help="Path to YAML config file (overrides CLI defaults)")
+    parser.add_argument("--output-dir", type=str, default="/data/profiling-results",
+                        help="Directory to save profiling results")
     return parser.parse_args()
 
 
@@ -88,6 +93,71 @@ def build_run_config(cfg, device):
     return run_config
 
 
+def save_profiling_results(output_dir, run_id, prof_metrics, prof, device, run_config):
+    """Save profiling results to EFS as both JSON and text files."""
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Save structured JSON metrics
+    json_file = os.path.join(output_dir, f"profiling-metrics-{run_id}.json")
+    with open(json_file, 'w') as f:
+        json.dump({
+            "run_id": run_id,
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "config": run_config,
+            "metrics": prof_metrics
+        }, f, indent=2)
+    
+    # Save human-readable profiler table
+    sort_key = "cuda_time_total" if device.type == "cuda" else "cpu_time_total"
+    table_output = prof.key_averages().table(sort_by=sort_key, row_limit=20)
+    
+    text_file = os.path.join(output_dir, f"profiling-table-{run_id}.txt")
+    with open(text_file, 'w') as f:
+        f.write(f"PyTorch Profiler Results - Run {run_id}\n")
+        f.write(f"Timestamp: {datetime.utcnow().isoformat()}Z\n")
+        f.write(f"Device: {device.type}\n")
+        if device.type == "cuda":
+            f.write(f"GPU: {torch.cuda.get_device_name(0)}\n")
+        f.write(f"Batch Size: {run_config['batch_size']}\n")
+        f.write("=" * 80 + "\n\n")
+        f.write("TOP KERNELS BY EXECUTION TIME:\n")
+        f.write(table_output)
+        f.write("\n\n")
+        f.write("SUMMARY METRICS:\n")
+        for key, value in prof_metrics.items():
+            if key != "top_kernels":
+                f.write(f"{key}: {value}\n")
+    
+    # Save Chrome trace for detailed analysis
+    trace_file = os.path.join(output_dir, f"profiling-trace-{run_id}.json")
+    prof.export_chrome_trace(trace_file)
+    
+    logger.info("Saved profiling results to %s:", output_dir)
+    logger.info("  - Metrics: %s", json_file)
+    logger.info("  - Table: %s", text_file)
+    logger.info("  - Chrome trace: %s", trace_file)
+
+
+def save_training_summary(output_dir, run_id, training_results, run_config):
+    """Save training summary to EFS."""
+    summary_file = os.path.join(output_dir, f"training-summary-{run_id}.txt")
+    with open(summary_file, 'w') as f:
+        f.write(f"Training Summary - Run {run_id}\n")
+        f.write(f"Timestamp: {datetime.utcnow().isoformat()}Z\n")
+        f.write("=" * 50 + "\n\n")
+        f.write("CONFIGURATION:\n")
+        for key, value in run_config.items():
+            f.write(f"  {key}: {value}\n")
+        f.write("\nTRAINING RESULTS:\n")
+        for epoch_result in training_results:
+            f.write(f"  Epoch {epoch_result['epoch']}: "
+                   f"loss={epoch_result['training_loss']:.4f} "
+                   f"acc={epoch_result['test_accuracy_pct']:.2f}% "
+                   f"tput={epoch_result['throughput_samples_per_sec']:.1f} samples/sec\n")
+    
+    logger.info("Saved training summary: %s", summary_file)
+
+
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
@@ -104,7 +174,12 @@ def main():
     run_config = build_run_config(cfg, device)
     gpu = GPUMetricsCollector()
 
-    log_metric(stage=STAGE, script=SCRIPT, phase="startup", metrics={"device": device.type}, config=run_config)
+    # Generate unique run ID for this execution
+    run_id = f"{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}-{os.getpid()}"
+    logger.info("Starting training run: %s", run_id)
+
+    log_metric(stage=STAGE, script=SCRIPT, phase="startup", 
+               metrics={"device": device.type, "run_id": run_id}, config=run_config)
 
     logger.info("Loading %s dataset from %s...", cfg["dataset"], cfg["data_dir"])
     train_loader, test_loader = get_data_loaders(args)
@@ -120,6 +195,7 @@ def main():
 
     gpu.reset_peak_stats()
     t0 = time.perf_counter()
+    training_results = []
 
     for epoch in range(1, cfg["epochs"] + 1):
         logger.info("Epoch %d/%d", epoch, cfg["epochs"])
@@ -127,8 +203,13 @@ def main():
         if epoch == 1:
             prof, loss, tput, elapsed = run_profiled_epoch(model, train_loader, criterion, optimizer, device)
             prof_metrics = extract_profiler_metrics(prof, device)
+            
+            # Save profiling results to EFS
+            save_profiling_results(args.output_dir, run_id, prof_metrics, prof, device, run_config)
+            
             log_metric(stage=STAGE, script=SCRIPT, phase="profiling",
-                       metrics={"epoch": epoch, **prof_metrics, **gpu.to_dict()}, config=run_config)
+                       metrics={"epoch": epoch, "run_id": run_id, **prof_metrics, **gpu.to_dict()}, 
+                       config=run_config)
             sort_key = "cuda_time_total" if device.type == "cuda" else "cpu_time_total"
             logger.info("Profiler Summary:\n%s", prof.key_averages().table(sort_by=sort_key, row_limit=15))
         else:
@@ -137,19 +218,28 @@ def main():
         test_loss, acc = evaluate(model, test_loader, criterion, device)
         scheduler.step()
 
-        log_metric(stage=STAGE, script=SCRIPT, phase="training", metrics={
+        epoch_metrics = {
             "epoch": epoch, "training_loss": round(loss, 4), "test_loss": round(test_loss, 4),
             "test_accuracy_pct": round(acc, 2), "throughput_samples_per_sec": round(tput, 1),
             "elapsed_seconds": round(elapsed, 2), **gpu.to_dict(),
-        }, config=run_config)
+        }
+        training_results.append(epoch_metrics)
+
+        log_metric(stage=STAGE, script=SCRIPT, phase="training", 
+                   metrics={**epoch_metrics, "run_id": run_id}, config=run_config)
 
         logger.info("loss=%.4f acc=%.2f%% tput=%.1f samples/sec time=%.2fs", loss, acc, tput, elapsed)
 
     total = time.perf_counter() - t0
+    
+    # Save training summary to EFS
+    save_training_summary(args.output_dir, run_id, training_results, run_config)
+    
     log_metric(stage=STAGE, script=SCRIPT, phase="complete",
-               metrics={"total_epochs": cfg["epochs"], "total_elapsed_seconds": round(total, 2), **gpu.to_dict()},
+               metrics={"total_epochs": cfg["epochs"], "total_elapsed_seconds": round(total, 2), 
+                       "run_id": run_id, **gpu.to_dict()},
                config=run_config)
-    logger.info("Done: %d epochs in %.2fs", cfg["epochs"], total)
+    logger.info("Done: %d epochs in %.2fs (Run ID: %s)", cfg["epochs"], total, run_id)
 
 
 if __name__ == "__main__":

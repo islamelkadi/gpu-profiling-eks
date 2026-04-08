@@ -5,6 +5,8 @@ metadata:
     app: training
     method: baseline
 spec:
+  completions: 5
+  parallelism: 1
   template:
     metadata:
       labels:
@@ -24,6 +26,8 @@ spec:
             - "${BATCH_SIZE}"
             - --data-dir
             - /data
+            - --output-dir
+            - /data/profiling-results
           resources:
             requests:
               nvidia.com/gpu: 1
