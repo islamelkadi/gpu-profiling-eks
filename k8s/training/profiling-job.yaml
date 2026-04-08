@@ -1,0 +1,40 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  labels:
+    app: training
+    method: baseline
+spec:
+  template:
+    metadata:
+      labels:
+        app: training
+        method: baseline
+    spec:
+      containers:
+        - name: training
+          image: ${ECR_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
+          command:
+            - python
+            - "-m"
+            - src.training.train
+            - --epochs
+            - "${EPOCHS}"
+            - --batch-size
+            - "${BATCH_SIZE}"
+            - --data-dir
+            - /data
+          resources:
+            requests:
+              nvidia.com/gpu: 1
+              memory: "${MEMORY}"
+            limits:
+              nvidia.com/gpu: 1
+          volumeMounts:
+            - name: training-data
+              mountPath: /data
+      volumes:
+        - name: training-data
+          persistentVolumeClaim:
+            claimName: training-data
+      restartPolicy: Never
