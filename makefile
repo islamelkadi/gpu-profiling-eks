@@ -55,7 +55,7 @@ RUNTIME      ?= finch
 # -----------------------------------------------------------------------------
 # Container Image Configuration
 # -----------------------------------------------------------------------------
-DLC_REGISTRY := 763104351884.dkr.ecr.us-west-2.amazonaws.com
+DLC_REGISTRY := 763104351884.dkr.ecr.$(AWS_REGION).amazonaws.com
 export ECR_REGISTRY  := $(AWS_ACCOUNT).dkr.ecr.$(AWS_REGION).amazonaws.com
 export IMAGE_NAME    := ai-infra-training
 export IMAGE_TAG     := latest
