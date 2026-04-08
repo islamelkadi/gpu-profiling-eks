@@ -6,8 +6,8 @@
 #   make bootstrap              # one-time: install tools + plugins + venv
 #   make all                    # setup → infra → storage → build → push → run
 #   make run EPOCHS=10          # override training params
-#   make ssm-tunnel-start        # tunnel to private EKS API via bastion
-#   make ssm-tunnel-stop         # stop the tunnel
+#   make ssm-tunnel-start       # tunnel to private EKS API via bastion
+#   make ssm-tunnel-stop        # stop the tunnel
 #   make teardown               # destroy everything
 # =============================================================================
 
@@ -55,6 +55,7 @@ RUNTIME      ?= finch
 # -----------------------------------------------------------------------------
 # Container Image Configuration
 # -----------------------------------------------------------------------------
+DLC_REGISTRY := 763104351884.dkr.ecr.us-west-2.amazonaws.com
 export ECR_REGISTRY  := $(AWS_ACCOUNT).dkr.ecr.$(AWS_REGION).amazonaws.com
 export IMAGE_NAME    := ai-infra-training
 export IMAGE_TAG     := latest
@@ -79,7 +80,7 @@ STORAGE_MANIFESTS := $(K8S_DIR)/storage
 .PHONY: help bootstrap check-prereqs venv setup \
         infra storage \
         build push \
-        deploy run logs status \
+        run logs status \
         ssm-tunnel-start ssm-tunnel-stop ssm-tunnel-status \
         clean clean-venv teardown all
 
@@ -176,12 +177,18 @@ storage:
 	envsubst < $(STORAGE_MANIFESTS)/efs-storageclass.yaml | kubectl apply -f -
 	kubectl apply -f $(STORAGE_MANIFESTS)/efs-pvc.yaml
 
+## gpu-nodepool: Deploy the GPU Karpenter NodePool for EKS AutoMode
+gpu-nodepool:
+	kubectl apply -f $(K8S_DIR)/compute/gpu-nodepool.yaml
+
 # =============================================================================
 # Container Image (build + push to ECR)
 # =============================================================================
 
 ## build: Build the training container image
 build:
+	aws ecr get-login-password --region $(AWS_REGION) | \
+		$(RUNTIME) login --username AWS --password-stdin $(DLC_REGISTRY)
 	$(RUNTIME) build -t $(IMAGE_NAME):$(IMAGE_TAG) .
 
 ## push: Tag and push the container image to ECR
@@ -195,12 +202,9 @@ push:
 # Training Workload (deploy + run + observe)
 # =============================================================================
 
-## deploy: Render and apply the profiling Job manifest
-deploy:
+## run: Render and apply the profiling Job manifest
+run:
 	envsubst < $(JOB_MANIFEST) | kubectl apply -f -
-
-## run: Submit the profiling Job (alias for deploy)
-run: deploy
 
 ## logs: Tail logs from the profiling Job
 logs:
@@ -253,4 +257,4 @@ teardown:
 # =============================================================================
 
 ## all: Full end-to-end pipeline — setup → infra → storage → build → push → run
-all: setup infra storage build push run
+all: setup infra build push ssm-tunnel-start storage run
