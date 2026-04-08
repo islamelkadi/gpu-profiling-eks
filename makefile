@@ -95,7 +95,7 @@ help:
 	@echo ""
 	@echo "Usage: make <target> [EPOCHS=5] [BATCH_SIZE=128]"
 	@echo ""
-	@awk '/^## / { sub(/^## /, ""); split($0, a, ": "); printf "  $(CYAN)%-15s$(NC) %s\n", a[1], a[2] }' $(MAKEFILE_LIST)
+	@awk '/^## / { sub(/^## /, ""); split($$0, a, ": "); printf "  $(CYAN)%-15s$(NC) %s\n", a[1], a[2] }' $(MAKEFILE_LIST)
 	@echo ""
 
 # =============================================================================
